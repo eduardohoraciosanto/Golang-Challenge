@@ -1,5 +1,14 @@
 # Golang-Challenge
 
+We ask that you complete the following challenge to evaluate your development skills. Please use the programming language and framework discussed during your interview to accomplish the following task.
+
+PLEASE DO NOT FORK THE REPOSITORY. WE NEED A PUBLIC REPOSITORY FOR THE REVIEW.
+
+## Show your work
+
+Create a Public repository ( please dont make a pull request, clone the private repository and create a new plublic one on your profile)
+Commit each step of your process so we can follow your thought process.
+
 # Code Implementation
 
 Given a list of userIds, you have to find the social circle of each one of them. A social circle of a user consists of their friends and the friends of their friends, and so on. Let’s see an example:
