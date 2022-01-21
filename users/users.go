@@ -2,6 +2,7 @@ package users
 
 import (
 	"errors"
+	"sort"
 	"sync"
 )
 
@@ -74,6 +75,9 @@ func (c *concurrentMap) GetSocialCircles() map[string][]string {
 		for friend := range userFriends {
 			friends = append(friends, friend)
 		}
+		sort.SliceStable(friends, func(i, j int) bool {
+			return friends[i] < friends[j]
+		})
 		socialCircles[user] = friends
 	}
 	return socialCircles
