@@ -18,32 +18,65 @@ type userRepository struct {
 }
 
 type ConcurrentMap interface {
-	Exists(id string) bool
-	Add(id string)
-	Remove(id string)
+	FriendExists(user, friend string) bool
+	AddFriend(user, friend string)
+	GetSocialCircles() map[string][]string
 }
 type concurrentMap struct {
-	data map[string]struct{}
+	data map[string]map[string]struct{}
 	lock *sync.RWMutex
 }
 
-func (c *concurrentMap) Exists(id string) bool {
+func (c *concurrentMap) FriendExists(user, friend string) bool {
 	c.lock.RLock()
-	_, exists := c.data[id]
-	c.lock.RUnlock()
-	return exists
+	defer c.lock.RUnlock()
+
+	friends, exists := c.data[user]
+	if !exists {
+		return false
+	}
+	_, friendExists := friends[friend]
+
+	return friendExists
 }
 
-func (c *concurrentMap) Add(id string) {
+func (c *concurrentMap) AddFriend(user, friend string) {
+	//we won't add the user as self-friend
+	if user == friend {
+		return
+	}
+	//friends already existing won't be added
+	if c.FriendExists(user, friend) {
+		return
+	}
+
+	//safe access to underlying map
 	c.lock.Lock()
-	c.data[id] = struct{}{}
-	c.lock.Unlock()
+	defer c.lock.Unlock()
+
+	//get friends, add new one, save it.
+	friends := c.data[user]
+	if friends == nil {
+		friends = make(map[string]struct{})
+	}
+	friends[friend] = struct{}{}
+	c.data[user] = friends
 }
 
-func (c *concurrentMap) Remove(id string) {
-	c.lock.Lock()
-	delete(c.data, id)
-	c.lock.Unlock()
+func (c *concurrentMap) GetSocialCircles() map[string][]string {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+
+	socialCircles := make(map[string][]string)
+
+	for user, userFriends := range c.data {
+		friends := []string{}
+		for friend := range userFriends {
+			friends = append(friends, friend)
+		}
+		socialCircles[user] = friends
+	}
+	return socialCircles
 }
 
 var (
@@ -102,38 +135,52 @@ func (u *userRepository) GetUser(id string) (User, error) {
 //
 // userIds that are not in the known userbase won't exist in the returned map
 func FindAllSocialCircles(userIds []string) map[string][]string {
-	circles := make(map[string][]string)
+	wg := &sync.WaitGroup{}
+	socialCircles := &concurrentMap{
+		data: make(map[string]map[string]struct{}),
+		lock: &sync.RWMutex{},
+	}
 	//Code Red, then I'll make it Green
 	for _, id := range userIds {
-		socialCircle := concurrentMap{
-			data: make(map[string]struct{}),
-			lock: &sync.RWMutex{},
-		}
-		findFriends(id, &socialCircle)
-		socialCircle.Remove(id)
-
-		friendsSlice := []string{}
-		for friendID := range socialCircle.data {
-			friendsSlice = append(friendsSlice, friendID)
-		}
-		circles[id] = friendsSlice
+		friendsChan := make(chan []string)
+		go findAllFriends(id, friendsChan)
+		wg.Add(1)
+		go gatherFriends(id, friendsChan, socialCircles, wg)
 	}
-
-	return circles
+	wg.Wait()
+	return socialCircles.GetSocialCircles()
 }
 
-func findFriends(userID string, dataMap ConcurrentMap) {
-	user, err := userRepo.GetUser(userID)
-	if err != nil {
-		//user that does not exist
-		return
-	}
-	for _, friendID := range user.Friends {
-		if dataMap.Exists(friendID) {
-			continue
-		}
-		dataMap.Add(friendID)
-		findFriends(friendID, dataMap)
+func findAllFriends(userID string, dataChan chan []string) {
+	recursiveFriendsOf(userID, nil, dataChan)
+	close(dataChan)
+}
+
+func recursiveFriendsOf(userID string, friendsOfFound map[string]struct{}, dataChan chan []string) {
+	if friendsOfFound == nil {
+		friendsOfFound = make(map[string]struct{})
 	}
 
+	if _, found := friendsOfFound[userID]; found {
+		return
+	}
+
+	user, err := userRepo.GetUser(userID)
+	if err != nil {
+		return
+	}
+	dataChan <- user.Friends
+	friendsOfFound[userID] = struct{}{}
+	for _, friendID := range user.Friends {
+		recursiveFriendsOf(friendID, friendsOfFound, dataChan)
+	}
+}
+
+func gatherFriends(userID string, datachan chan []string, friendsMap ConcurrentMap, wg *sync.WaitGroup) {
+	for incomingFriends := range datachan {
+		for _, friend := range incomingFriends {
+			friendsMap.AddFriend(userID, friend)
+		}
+	}
+	wg.Done()
 }
