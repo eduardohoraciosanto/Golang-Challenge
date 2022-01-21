@@ -2,6 +2,7 @@ package users
 
 import (
 	"errors"
+	"sync"
 )
 
 type UserRepository interface {
@@ -14,6 +15,35 @@ type User struct {
 }
 
 type userRepository struct {
+}
+
+type ConcurrentMap interface {
+	Exists(id string) bool
+	Add(id string)
+	Remove(id string)
+}
+type concurrentMap struct {
+	data map[string]struct{}
+	lock *sync.RWMutex
+}
+
+func (c *concurrentMap) Exists(id string) bool {
+	c.lock.RLock()
+	_, exists := c.data[id]
+	c.lock.RUnlock()
+	return exists
+}
+
+func (c *concurrentMap) Add(id string) {
+	c.lock.Lock()
+	c.data[id] = struct{}{}
+	c.lock.Unlock()
+}
+
+func (c *concurrentMap) Remove(id string) {
+	c.lock.Lock()
+	delete(c.data, id)
+	c.lock.Unlock()
 }
 
 var (
@@ -72,22 +102,38 @@ func (u *userRepository) GetUser(id string) (User, error) {
 //
 // userIds that are not in the known userbase won't exist in the returned map
 func FindAllSocialCircles(userIds []string) map[string][]string {
-
+	circles := make(map[string][]string)
 	//Code Red, then I'll make it Green
 	for _, id := range userIds {
-		//I'll use a map with an empty struct to save a bit on memory and avoid repetitions
-		sc := make(map[string]struct{})
-
-		user, err := userRepo.GetUser(id)
-		if err != nil {
-			//user that does not exist
-			continue
+		socialCircle := concurrentMap{
+			data: make(map[string]struct{}),
+			lock: &sync.RWMutex{},
 		}
-		for _, friendID := range user.Friends {
-			sc[friendID] = struct{}{}
-		}
+		findFriends(id, &socialCircle)
+		socialCircle.Remove(id)
 
+		friendsSlice := []string{}
+		for friendID := range socialCircle.data {
+			friendsSlice = append(friendsSlice, friendID)
+		}
+		circles[id] = friendsSlice
 	}
 
-	return nil
+	return circles
+}
+
+func findFriends(userID string, dataMap ConcurrentMap) {
+	user, err := userRepo.GetUser(userID)
+	if err != nil {
+		//user that does not exist
+		return
+	}
+	for _, friendID := range user.Friends {
+		if dataMap.Exists(friendID) {
+			continue
+		}
+		dataMap.Add(friendID)
+		findFriends(friendID, dataMap)
+	}
+
 }
