@@ -15,19 +15,23 @@ type User struct {
 	Friends []string
 }
 
+//userRepository is just a struct to allow the implementation of the UserRepository
 type userRepository struct {
 }
 
+//ConcurrentMap allows for using a Map safely
 type ConcurrentMap interface {
 	FriendExists(user, friend string) bool
 	AddFriend(user, friend string)
 	GetSocialCircles() map[string][]string
 }
+
 type concurrentMap struct {
 	data map[string]map[string]struct{}
 	lock *sync.RWMutex
 }
 
+//FriendExists is used to safely check for an existing asociation userID<-> friend
 func (c *concurrentMap) FriendExists(user, friend string) bool {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
@@ -41,6 +45,7 @@ func (c *concurrentMap) FriendExists(user, friend string) bool {
 	return friendExists
 }
 
+//AddFriend allows for adding a friend safely on the concurrent map
 func (c *concurrentMap) AddFriend(user, friend string) {
 	//we won't add the user as self-friend
 	if user == friend {
@@ -64,6 +69,7 @@ func (c *concurrentMap) AddFriend(user, friend string) {
 	c.data[user] = friends
 }
 
+//GetSocialCircles returns the social circles in the necessary format
 func (c *concurrentMap) GetSocialCircles() map[string][]string {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
@@ -144,7 +150,8 @@ func FindAllSocialCircles(userIds []string) map[string][]string {
 		data: make(map[string]map[string]struct{}),
 		lock: &sync.RWMutex{},
 	}
-	//Code Red, then I'll make it Green
+	// using two goroutines in parallel for each userID.
+	// synchronized them concurrently using channels. one for each userID
 	for _, id := range userIds {
 		friendsChan := make(chan []string)
 		go findAllFriends(id, friendsChan)
@@ -155,11 +162,15 @@ func FindAllSocialCircles(userIds []string) map[string][]string {
 	return socialCircles.GetSocialCircles()
 }
 
+//findAllFriends traverses the friends of the friends and sends information on the data channel. It also closes the channel once the recursive func has ended
+//
+// To be used in parallel with gatherFriends
 func findAllFriends(userID string, dataChan chan []string) {
 	recursiveFriendsOf(userID, nil, dataChan)
 	close(dataChan)
 }
 
+//recursiveFriendsOf keeps track of what friends were already sent to the channel and keeps sending data unless all friends are sent
 func recursiveFriendsOf(userID string, friendsOfFound map[string]struct{}, dataChan chan []string) {
 	if friendsOfFound == nil {
 		friendsOfFound = make(map[string]struct{})
@@ -180,6 +191,9 @@ func recursiveFriendsOf(userID string, friendsOfFound map[string]struct{}, dataC
 	}
 }
 
+//gatherFriends receives friends over the channel and adds them safely to the underlying safeMap.
+//
+// To be used in parallel with findAllFriends
 func gatherFriends(userID string, datachan chan []string, friendsMap ConcurrentMap, wg *sync.WaitGroup) {
 	for incomingFriends := range datachan {
 		for _, friend := range incomingFriends {
