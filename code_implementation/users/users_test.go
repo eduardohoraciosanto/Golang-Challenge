@@ -3,7 +3,7 @@ package users_test
 import (
 	"testing"
 
-	"github.com/eduardohoraciosanto/Golang-Challenge/users"
+	"github.com/eduardohoraciosanto/Golang-Challenge/code_implementation/users"
 	"gotest.tools/assert"
 )
 

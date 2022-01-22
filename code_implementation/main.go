@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/eduardohoraciosanto/Golang-Challenge/users"
+	"github.com/eduardohoraciosanto/Golang-Challenge/code_implementation/users"
 )
 
 func main() {
