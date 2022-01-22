@@ -67,24 +67,18 @@ func (c *TransparentCache) GetConcurrentPriceFor(inputChannel chan string, itemA
 	errorChan := make(chan error, itemAmount)
 	go func() {
 		wg := &sync.WaitGroup{}
-		//TODO Change this to the for range syntax afterwards
-	M:
-		for {
-			select {
-			case itemCode, ok := <-inputChannel:
-				if !ok {
-					break M
+		//Changed infinite loop and tagged break for the range syntax
+		// also changed the internal func sent to a goroutine to handle the itemCode by parameter
+		for itemCode := range inputChannel {
+			wg.Add(1)
+			go func(code string) {
+				defer (*wg).Done()
+				price, err := c.GetPriceFor(code)
+				if err != nil {
+					errorChan <- err
 				}
-				wg.Add(1)
-				go func() {
-					defer (*wg).Done()
-					price, err := c.GetPriceFor(itemCode)
-					if err != nil {
-						errorChan <- err
-					}
-					resultChan <- price
-				}()
-			}
+				resultChan <- price
+			}(itemCode)
 		}
 		wg.Wait()
 		close(resultChan)
