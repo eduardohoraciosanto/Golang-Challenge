@@ -1,4 +1,4 @@
-package unit_testing
+package cache
 
 import (
 	"fmt"
@@ -67,6 +67,7 @@ func (c *TransparentCache) GetConcurrentPriceFor(inputChannel chan string, itemA
 	errorChan := make(chan error, itemAmount)
 	go func() {
 		wg := &sync.WaitGroup{}
+		//TODO Change this to the for range syntax afterwards
 	M:
 		for {
 			select {
